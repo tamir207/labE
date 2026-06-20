@@ -174,7 +174,69 @@ void print_section_names() {
 }
 
 void print_symbols() {
-    printf("Print Symbols: not implemented yet\n");
+    int f;
+
+    if (num_files == 0) {
+        printf("Error: No ELF files are currently open\n");
+        return;
+    }
+
+    for (f = 0; f < num_files; f++) {
+        Elf32_Ehdr *ehdr = (Elf32_Ehdr *)elf_files[f].map_start;
+        Elf32_Shdr *shdr_table = (Elf32_Shdr *)((char *)elf_files[f].map_start + ehdr->e_shoff);
+        Elf32_Half shstrndx = ehdr->e_shstrndx;
+        char *shstrtab = (char *)elf_files[f].map_start + shdr_table[shstrndx].sh_offset;
+
+        int i;
+        int symtab_idx = -1;
+
+        for (i = 0; i < ehdr->e_shnum; i++) {
+            if (shdr_table[i].sh_type == SHT_SYMTAB) {
+                symtab_idx = i;
+                break;
+            }
+        }
+
+        if (symtab_idx == -1) {
+            printf("File %s: no symbol table found\n", elf_files[f].name);
+            continue;
+        }
+
+        Elf32_Shdr *symtab_shdr = &shdr_table[symtab_idx];
+        Elf32_Sym *symtab = (Elf32_Sym *)((char *)elf_files[f].map_start + symtab_shdr->sh_offset);
+        int num_symbols = symtab_shdr->sh_size / symtab_shdr->sh_entsize;
+
+        Elf32_Shdr *strtab_shdr = &shdr_table[symtab_shdr->sh_link];
+        char *strtab = (char *)elf_files[f].map_start + strtab_shdr->sh_offset;
+
+        if (debug_mode) {
+            fprintf(stderr, "File %s: symbol table size = %u bytes, number of symbols = %d\n",
+                    elf_files[f].name, symtab_shdr->sh_size, num_symbols);
+        }
+
+        printf("File %s symbols:\n", elf_files[f].name);
+
+        for (i = 0; i < num_symbols; i++) {
+            Elf32_Sym *sym = &symtab[i];
+            Elf32_Word value = sym->st_value;
+            Elf32_Half section_index = sym->st_shndx;
+            char *section_name;
+            const char *symbol_name = strtab + sym->st_name;
+
+            if (section_index < ehdr->e_shnum) {
+                section_name = shstrtab + shdr_table[section_index].sh_name;
+            } else {
+                section_name = "";
+            }
+
+            printf("[%2d] %08x %4u %-15s %s\n",
+                   i,
+                   value,
+                   section_index,
+                   section_name,
+                   symbol_name);
+        }
+    }
 }
 
 void print_relocations() {
@@ -190,10 +252,6 @@ void merge_elf_files() {
 }
 
 void quit() {
-    if (debug_mode) {
-        fprintf(stderr, "quitting\n");
-    }
-
     for (int i = 0; i < num_files; i++) {
         if (elf_files[i].map_start != NULL) {
             munmap(elf_files[i].map_start, elf_files[i].file_size);
@@ -223,10 +281,6 @@ int main(int argc, char **argv) {
     int i;
 
     while (1) {
-        if (debug_mode) {
-            fprintf(stderr, "num_files: %d\n", num_files);
-        }
-
         printf("Choose action:\n");
         i = 0;
         while (menu[i].name != NULL) {
