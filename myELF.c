@@ -136,7 +136,41 @@ void examine_elf_file() {
 }
 
 void print_section_names() {
-    printf("Print Section Names: not implemented yet\n");
+    int f, i;
+
+    if (num_files == 0) {
+        printf("Error: No ELF files are currently open\n");
+        return;
+    }
+
+    for (f = 0; f < num_files; f++) {
+        Elf32_Ehdr *ehdr = (Elf32_Ehdr *)elf_files[f].map_start;
+        Elf32_Shdr *shdr_table = (Elf32_Shdr *)((char *)elf_files[f].map_start + ehdr->e_shoff);
+        Elf32_Half shstrndx = ehdr->e_shstrndx;
+        char *shstrtab = (char *)elf_files[f].map_start + shdr_table[shstrndx].sh_offset;
+
+        if (debug_mode) {
+            fprintf(stderr, "shstrndx: %u\n", shstrndx);
+        }
+
+        printf("File %s sections:\n", elf_files[f].name);
+
+        for (i = 0; i < ehdr->e_shnum; i++) {
+            char *name = shstrtab + shdr_table[i].sh_name;
+
+            if (debug_mode) {
+                fprintf(stderr, "section[%d] sh_name offset: %u\n", i, shdr_table[i].sh_name);
+            }
+
+            printf("[%2d] %-18s %08x %08x %08x %u\n",
+                   i,
+                   name,
+                   shdr_table[i].sh_addr,
+                   shdr_table[i].sh_offset,
+                   shdr_table[i].sh_size,
+                   shdr_table[i].sh_type);
+        }
+    }
 }
 
 void print_symbols() {

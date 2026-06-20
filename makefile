@@ -1,9 +1,9 @@
-all: task0
+all: myELF
 
-task1: task0.c
-	gcc -m32 -g task0.c -o task0
+task1: myELF.c
+	gcc -m32 -g myELF.c -o myELF
 
 .PHONY: clean
 
 clean:
-	rm -f task0
+	rm -f myELF
