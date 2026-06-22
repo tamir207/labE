@@ -1,9 +1,9 @@
 all: myELF
 
-task1: myELF.c
+myELF: myELF.c
 	gcc -m32 -g myELF.c -o myELF
 
-.PHONY: clean
+.PHONY: all clean
 
 clean:
 	rm -f myELF
