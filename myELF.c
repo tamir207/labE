@@ -329,7 +329,11 @@ void print_relocations() {
                         type_name = "R_386_GOTPC";
                     else type_name = "UNKNOWN";
 
-                    printf("[%2d] %08x %-20s %s\n", reloc_index, r_offset, sym_name, type_name);
+                    printf("[%2d] %08x %-20s %s\n", 
+                        reloc_index, 
+                        r_offset, 
+                        sym_name, 
+                        type_name);
                     reloc_index++;
                 }
             }
@@ -342,7 +346,133 @@ void print_relocations() {
 }
 
 void check_files_for_merge() {
-    printf("Check Files for Merge: not implemented yet\n");
+    if (num_files != 2) {
+        printf("Error: exactly 2 ELF files must be opened for merge checking\n");
+        return;
+    }
+
+    Elf32_Ehdr *ehdr1 = (Elf32_Ehdr *)elf_files[0].map_start;
+    Elf32_Shdr *shdr_table1 = (Elf32_Shdr *)((char *)elf_files[0].map_start + ehdr1->e_shoff);
+
+    Elf32_Ehdr *ehdr2 = (Elf32_Ehdr *)elf_files[1].map_start;
+    Elf32_Shdr *shdr_table2 = (Elf32_Shdr *)((char *)elf_files[1].map_start + ehdr2->e_shoff);
+
+    int i;
+    int symtab_idx1 = -1, symtab_count1 = 0;
+    int symtab_idx2 = -1, symtab_count2 = 0;
+
+    for (i = 0; i < ehdr1->e_shnum; i++) {
+        if (shdr_table1[i].sh_type == SHT_SYMTAB) {
+            symtab_count1++;
+            if (symtab_idx1 == -1) {
+                symtab_idx1 = i;
+            }
+        }
+    }
+
+    for (i = 0; i < ehdr2->e_shnum; i++) {
+        if (shdr_table2[i].sh_type == SHT_SYMTAB) {
+            symtab_count2++;
+            if (symtab_idx2 == -1) {
+                symtab_idx2 = i;
+            }
+        }
+    }
+
+    if (symtab_count1 != 1 || symtab_count2 != 1) {
+        printf("Feature not supported\n");
+        return;
+    }
+
+    Elf32_Shdr *symtab_shdr1 = &shdr_table1[symtab_idx1];
+    Elf32_Sym *symtab1 = (Elf32_Sym *)((char *)elf_files[0].map_start + symtab_shdr1->sh_offset);
+    int num_syms1 = symtab_shdr1->sh_size / symtab_shdr1->sh_entsize;
+    Elf32_Shdr *strtab_shdr1 = &shdr_table1[symtab_shdr1->sh_link];
+    char *strtab1 = (char *)elf_files[0].map_start + strtab_shdr1->sh_offset;
+
+    Elf32_Shdr *symtab_shdr2 = &shdr_table2[symtab_idx2];
+    Elf32_Sym *symtab2 = (Elf32_Sym *)((char *)elf_files[1].map_start + symtab_shdr2->sh_offset);
+    int num_syms2 = symtab_shdr2->sh_size / symtab_shdr2->sh_entsize;
+    Elf32_Shdr *strtab_shdr2 = &shdr_table2[symtab_shdr2->sh_link];
+    char *strtab2 = (char *)elf_files[1].map_start + strtab_shdr2->sh_offset;
+
+    int j;
+
+    for (i = 1; i < num_syms1; i++) {
+        Elf32_Sym *sym1 = &symtab1[i];
+        const char *name1 = strtab1 + sym1->st_name;
+
+        if (name1[0] == '\0') {
+            continue;
+        }
+
+        int idx2 = -1;
+        for (j = 1; j < num_syms2; j++) {
+            const char *name2 = strtab2 + symtab2[j].st_name;
+            if (strcmp(name1, name2) == 0) {
+                idx2 = j;
+                break;
+            }
+        }
+
+        int defined1 = (sym1->st_shndx != SHN_UNDEF);
+
+        if (!defined1) {
+            if (idx2 == -1) {
+                printf("Symbol %s undefined\n", name1);
+            } else {
+                int defined2 = (symtab2[idx2].st_shndx != SHN_UNDEF);
+                if (!defined2) {
+                    printf("Symbol %s undefined\n", name1);
+                }
+            }
+        } else {
+            if (idx2 != -1) {
+                int defined2 = (symtab2[idx2].st_shndx != SHN_UNDEF);
+                if (defined2) {
+                    printf("Symbol %s multiply defined\n", name1);
+                }
+            }
+        }
+    }
+
+    for (i = 1; i < num_syms2; i++) {
+        Elf32_Sym *sym2 = &symtab2[i];
+        const char *name2 = strtab2 + sym2->st_name;
+
+        if (name2[0] == '\0') {
+            continue;
+        }
+
+        int idx1 = -1;
+        for (j = 1; j < num_syms1; j++) {
+            const char *name1 = strtab1 + symtab1[j].st_name;
+            if (strcmp(name2, name1) == 0) {
+                idx1 = j;
+                break;
+            }
+        }
+
+        int defined2 = (sym2->st_shndx != SHN_UNDEF);
+
+        if (!defined2) {
+            if (idx1 == -1) {
+                printf("Symbol %s undefined\n", name2);
+            } else {
+                int defined1 = (symtab1[idx1].st_shndx != SHN_UNDEF);
+                if (!defined1) {
+                    printf("Symbol %s undefined\n", name2);
+                }
+            }
+        } else {
+            if (idx1 != -1) {
+                int defined1 = (symtab1[idx1].st_shndx != SHN_UNDEF);
+                if (defined1) {
+                    printf("Symbol %s multiply defined\n", name2);
+                }
+            }
+        }
+    }
 }
 
 void merge_elf_files() {
