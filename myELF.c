@@ -476,7 +476,82 @@ void check_files_for_merge() {
 }
 
 void merge_elf_files() {
-    printf("Merge ELF Files: not implemented yet\n");
+    if (num_files != 2) {
+        printf("Error: exactly 2 ELF files must be opened for merge\n");
+        return;
+    }
+
+    Elf32_Ehdr *ehdr1 = (Elf32_Ehdr *)elf_files[0].map_start;
+    Elf32_Shdr *shdr1 = (Elf32_Shdr *)((char *)elf_files[0].map_start + ehdr1->e_shoff);
+    char *shstrtab1 = (char *)elf_files[0].map_start + shdr1[ehdr1->e_shstrndx].sh_offset;
+
+    Elf32_Ehdr *ehdr2 = (Elf32_Ehdr *)elf_files[1].map_start;
+    Elf32_Shdr *shdr2 = (Elf32_Shdr *)((char *)elf_files[1].map_start + ehdr2->e_shoff);
+    char *shstrtab2 = (char *)elf_files[1].map_start + shdr2[ehdr2->e_shstrndx].sh_offset;
+
+    int out_fd = open("out.ro", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (out_fd == -1) {
+        printf("Error: Failed to create out.ro\n");
+        return;
+    }
+
+    Elf32_Ehdr out_ehdr = *ehdr1;
+
+    int shnum = ehdr1->e_shnum;
+    Elf32_Shdr *out_shdr = (Elf32_Shdr *)malloc(shnum * sizeof(Elf32_Shdr));
+    if (out_shdr == NULL) {
+        printf("Error: malloc failed\n");
+        close(out_fd);
+        return;
+    }
+    memcpy(out_shdr, shdr1, shnum * sizeof(Elf32_Shdr));
+
+    write(out_fd, &out_ehdr, sizeof(Elf32_Ehdr));
+    unsigned int cur_offset = sizeof(Elf32_Ehdr);
+
+    int i, j;
+    for (i = 0; i < shnum; i++) {
+        char *sec_name = shstrtab1 + shdr1[i].sh_name;
+
+        unsigned int new_offset = cur_offset;
+        unsigned int new_size   = shdr1[i].sh_size;
+
+        int mergeable = (strcmp(sec_name, ".text")   == 0 || strcmp(sec_name, ".data")   == 0 || strcmp(sec_name, ".rodata") == 0);
+
+        char *content1 = (char *)elf_files[0].map_start + shdr1[i].sh_offset;
+        write(out_fd, content1, shdr1[i].sh_size);
+        cur_offset += shdr1[i].sh_size;
+
+        if (mergeable) {
+            int found = -1;
+            for (j = 0; j < ehdr2->e_shnum; j++) {
+                char *name2 = shstrtab2 + shdr2[j].sh_name;
+                if (strcmp(name2, sec_name) == 0) {
+                    found = j;
+                    break;
+                }
+            }
+            if (found != -1) {
+                char *content2 = (char *)elf_files[1].map_start + shdr2[found].sh_offset;
+                write(out_fd, content2, shdr2[found].sh_size);
+                cur_offset += shdr2[found].sh_size;
+                new_size   += shdr2[found].sh_size;
+            }
+        }
+
+        out_shdr[i].sh_offset = new_offset;
+        out_shdr[i].sh_size   = new_size;
+    }
+
+    unsigned int shoff = cur_offset;
+    write(out_fd, out_shdr, shnum * sizeof(Elf32_Shdr));
+
+    out_ehdr.e_shoff = shoff;
+    lseek(out_fd, 0, SEEK_SET);
+    write(out_fd, &out_ehdr, sizeof(Elf32_Ehdr));
+
+    free(out_shdr);
+    close(out_fd);
 }
 
 void quit() {
