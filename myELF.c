@@ -150,7 +150,7 @@ void print_section_names() {
         char *section_names = (char *)elf_files[f].map_start + section_headers[section_names_index].sh_offset;
 
         if (debug_mode) {
-            fprintf(stderr, "section_names_index: %u\n", section_names_index);
+            fprintf(stderr, "shstrndx: %u\n", section_names_index);
         }
 
         printf("File %s sections:\n", elf_files[f].name);
