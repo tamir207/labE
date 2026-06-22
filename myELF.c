@@ -240,7 +240,105 @@ void print_symbols() {
 }
 
 void print_relocations() {
-    printf("Print Relocations: not implemented yet\n");
+    int f;
+
+    if (num_files == 0) {
+        printf("Error: No ELF files are currently open\n");
+        return;
+    }
+
+    for (f = 0; f < num_files; f++) {
+        Elf32_Ehdr *ehdr = (Elf32_Ehdr *)elf_files[f].map_start;
+        Elf32_Shdr *shdr_table = (Elf32_Shdr *)((char *)elf_files[f].map_start + ehdr->e_shoff);
+
+        int i;
+        int num_reloc_sections = 0;
+        int reloc_index = 0;
+
+        printf("File %s relocations:\n", elf_files[f].name);
+
+        for (i = 0; i < ehdr->e_shnum; i++) {
+            if (shdr_table[i].sh_type == SHT_REL || shdr_table[i].sh_type == SHT_RELA) {
+                num_reloc_sections = num_reloc_sections + 1;
+
+                Elf32_Shdr *rel_shdr = &shdr_table[i];
+
+                Elf32_Shdr *symtab_shdr = &shdr_table[rel_shdr->sh_link];
+                Elf32_Sym  *symtab = (Elf32_Sym *)((char *)elf_files[f].map_start + symtab_shdr->sh_offset);
+
+                Elf32_Shdr *strtab_shdr = &shdr_table[symtab_shdr->sh_link];
+                char *strtab = (char *)elf_files[f].map_start + strtab_shdr->sh_offset;
+
+                int entry_size;
+                if (rel_shdr->sh_type == SHT_RELA) {
+                    entry_size = sizeof(Elf32_Rela);
+                } else {
+                    entry_size = sizeof(Elf32_Rel);
+                }
+
+                int num_relocs = rel_shdr->sh_size / entry_size;
+
+                if (debug_mode) {
+                    fprintf(stderr,
+                        "Reloc section size: %u bytes, number of relocations: %d\n", rel_shdr->sh_size, num_relocs);
+                }
+
+                int j;
+                for (j = 0; j < num_relocs; j++) {
+                    Elf32_Addr r_offset;
+                    Elf32_Word r_info;
+
+                    if (rel_shdr->sh_type == SHT_RELA) {
+                        Elf32_Rela *r = (Elf32_Rela *)((char *)elf_files[f].map_start + rel_shdr->sh_offset + j * entry_size);
+                        r_offset = r->r_offset;
+                        r_info   = r->r_info;
+                    } else {
+                        Elf32_Rel *r = (Elf32_Rel *)((char *)elf_files[f].map_start + rel_shdr->sh_offset + j * entry_size);
+                        r_offset = r->r_offset;
+                        r_info   = r->r_info;
+                    }
+
+                    unsigned int sym_idx = ELF32_R_SYM(r_info);
+                    unsigned int type    = ELF32_R_TYPE(r_info);
+
+                    Elf32_Sym *sym = &symtab[sym_idx];
+                    const char *sym_name = strtab + sym->st_name;
+
+                    const char *type_name;
+                    if (type == R_386_NONE) 
+                        type_name = "R_386_NONE";
+                    else if (type == R_386_32) 
+                        type_name = "R_386_32";
+                    else if (type == R_386_PC32) 
+                        type_name = "R_386_PC32";
+                    else if (type == R_386_GOT32) 
+                        type_name = "R_386_GOT32";
+                    else if (type == R_386_PLT32) 
+                        type_name = "R_386_PLT32";
+                    else if (type == R_386_COPY) 
+                        type_name = "R_386_COPY";
+                    else if (type == R_386_GLOB_DAT) 
+                        type_name = "R_386_GLOB_DAT";
+                    else if (type == R_386_JMP_SLOT) 
+                        type_name = "R_386_JUMP_SLOT";
+                    else if (type == R_386_RELATIVE) 
+                        type_name = "R_386_RELATIVE";
+                    else if (type == R_386_GOTOFF) 
+                        type_name = "R_386_GOTOFF";
+                    else if (type == R_386_GOTPC) 
+                        type_name = "R_386_GOTPC";
+                    else type_name = "UNKNOWN";
+
+                    printf("[%2d] %08x %-20s %s\n", reloc_index, r_offset, sym_name, type_name);
+                    reloc_index++;
+                }
+            }
+        }
+
+        if (num_reloc_sections == 0) {
+            printf("No relocations\n");
+        }
+    }
 }
 
 void check_files_for_merge() {
